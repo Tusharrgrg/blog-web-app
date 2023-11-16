@@ -1,9 +1,25 @@
-import { useState } from 'react'
+import { useContext, useState } from 'react'
 import logo from '../imgs/full-logo.png'
 import { Link, Outlet } from 'react-router-dom'
+import { UserContext } from '../App';
+
+import UserNavigation from './user-navigation-comp'
+
 const Navbar = () => {
 
     const [searchBoxVisibility, setSearchBoxVisibility] = useState(false);
+    const { userAuth, userAuth: { auth_token, profile_img } } = useContext(UserContext);
+    const [userPanel, setUserPanel] = useState(false);
+
+    const handleUserPanel = () => {
+        setUserPanel(currentVal => !currentVal);
+    }
+
+    const handleBlur = () => {
+        setTimeout(() => {
+            setUserPanel(false);
+        }, 200);
+    }
 
 
     return (
@@ -14,7 +30,7 @@ const Navbar = () => {
                 </Link>
 
                 {/* div for search box */}
-                <div className={'absolute bg-white w-full left-0 top-full mt-0.5 border-b border-grey py-4 px-[5vw] md:border-0 md:block md:relative md:inset-0 md:p-0 md:w-auto md:show' + (searchBoxVisibility ? 'show' : 'hide')}>
+                <div className={'absolute bg-white w-full left-0 top-full mt-0.5 border-b border-grey py-4 px-[5vw] md:border-0 md:block md:relative md:inset-0 md:p-0 md:w-auto md:show ' + (searchBoxVisibility ? 'show' : 'hide')}>
                     <input
                         type="text"
                         placeholder='search'
@@ -35,13 +51,39 @@ const Navbar = () => {
                         <p>Write</p>
                     </Link>
 
-                    {/* Signin & Signup Button */}
-                    <Link to='/signin' className='btn-dark py-2'>
-                        Sign in
-                    </Link>
-                    <Link to='/signup' className='btn-light py-2 hidden md:block'>
-                        sign up
-                    </Link>
+                    {
+                        auth_token ?
+                            <>
+                                {/* Notification icon button */}
+                                <Link to='/dashboard/notification'>
+                                    <button className='w-12 h-12 rounded-full bg-grey relative hover:bg-black/10'>
+                                        <i className='fi fi-rr-bell text-2xl mt-1 block'></i>
+                                    </button>
+                                </Link>
+                                {/* User profile button */}
+                                <div className='relative' onClick={handleUserPanel} onBlur={handleBlur}>
+                                    <button className='w-12 h-12 mt-1'>
+                                        <img src={profile_img} alt="user_profile" className='w-full h-full object-cover rounded-full' />
+                                    </button>
+
+                                    {
+                                        userPanel ? <UserNavigation /> : ""
+                                    }
+
+                                </div>
+                            </>
+                            :
+                            <>
+                                {/* Signin & Signup Button */}
+                                <Link to='/signin' className='btn-dark py-2'>
+                                    Sign in
+                                </Link>
+                                <Link to='/signup' className='btn-light py-2 hidden md:block'>
+                                    sign up
+                                </Link>
+
+                            </>
+                    }
                 </div>
             </nav>
             {/* help to navigate route if there is nested routes */}
