@@ -1,1 +1,14 @@
-GET http://localhost:3000/get-upload-url
+
+POST http://localhost:3000/create-blog
+Content-Type: application/json
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY1NWQwMzk5NDRmMmQyNDYxODQ0NmJjMSIsImlhdCI6MTcwMDU5NDU4NX0.ixs1Xh1tlJj8khhQ7qO8ZzZCxzufr6LKybgDgISfSdI
+
+{
+    "title" :"a guide to journey",
+    "banner" : "http://ex.com",
+    "des" : "A best course",
+    "content": {
+        "blocks" :[1, 2]
+    },
+    "tags" : ["tag1", "tag2"]
+}

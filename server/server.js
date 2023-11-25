@@ -24,8 +24,9 @@ let emailRegex = /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/; // regex for e
 let passwordRegex = /^(?=.*\d)(?=.*[a-z])(?=.*[A-Z]).{6,20}$/; // regex for password
 
 app.use(express.json());
-app.use(cors());
+app.use(cors()); // cross origin resource sharing for communicate with frontend
 
+// connect with database
 mongoose.connect(process.env.DB_LOCATION, {
   autoIndex: true,
 });
@@ -37,6 +38,7 @@ const s3_bucket = new aws.S3({
   secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
 });
 
+// function to generate upload image url from aws
 const generateUploadUrl = async () => {
   const date = new Date();
   const imageName = `${nanoid()}-${date.getTime()}.jpeg`;
@@ -49,6 +51,7 @@ const generateUploadUrl = async () => {
   });
 };
 
+// function to verify jwt 
 const verifyJWT = (req, res, next) => {
   const authHeader = req.headers["authorization"];
   const token = authHeader && authHeader.split(" ")[1];
@@ -65,6 +68,7 @@ const verifyJWT = (req, res, next) => {
   });
 };
 
+// function to send data to frontend
 const DataTosend = (user) => {
   const auth_token = jwt.sign({ id: user._id }, process.env.SECRET_ACCESS_KEY);
   return {
@@ -75,6 +79,7 @@ const DataTosend = (user) => {
   };
 };
 
+// generate user name function to generate username through email id
 const generateUserName = async (email) => {
   let username = email.split("@")[0];
   let isUserNameExists = await User.exists({
@@ -222,13 +227,137 @@ app.post("/google-auth", async (req, res) => {
     });
 });
 
+// lates-blog route we dont need any validation for this
+app.post("/latest-blogs", (req, res) => {
+  let maxLimit = 5;
+  let { page } = req.body
+
+  Blog.find({ draft: false })
+    .populate("author", "personal_info.profile_img personal_info.username personal_info.fullname -_id")
+    .sort({ "publishedAt": -1 })
+    .select("blog_id title des banner tags activity publishedAt -_id")
+    .skip((page - 1) * maxLimit)
+    .limit(maxLimit)
+    .then(blogs => {
+      return res.status(200).json({ blogs })
+    })
+    .catch(err => {
+      return res.status(500).json({ error: err.message })
+    })
+})
+
+// count total number of blogs route
+app.post('/all-latest-blogs-count', (req, res) => {
+  Blog.countDocuments({ draft: false })
+    .then((count) => {
+      return res.status(200).json({ totalDocs: count })
+    })
+    .catch(err => {
+      return res.status(500).json({ error: err.message })
+    })
+})
+
+// trending blogs route
+app.get("/trending-blogs", (req, res) => {
+  Blog.find({ draft: false })
+    .populate("author", "personal_info.profile_img personal_info.username personal_info.fullname -_id")
+    .sort({ "activity.total_read": -1, "activity.total_likes": -1, "publishedAt": -1 })
+    .select("blog_id title publishedAt -_id")
+    .limit(5)
+    .then(blogs => {
+      return res.status(200).json({ blogs });
+    })
+    .catch(err => {
+      return res.status(500).json({ error: err.message })
+    })
+})
+
+app.post('/search-blogs', (req, res) => {
+  let { tag, query, author, page } = req.body;
+
+  let findQuery
+
+  if (tag) {
+    findQuery = { tags: tag, draft: false }
+  } else if (query) {
+    findQuery = { draft: false, title: new RegExp(query, 'i') }
+  }else if(author){
+    findQuery = {author, draft : false}
+  }
+
+
+  let maxLimit = 5;
+  Blog.find(findQuery)
+    .populate("author", "personal_info.profile_img personal_info.username personal_info.fullname -_id")
+    .sort({ "publishedAt": -1 })
+    .select("blog_id title des banner tags activity publishedAt -_id")
+    .skip((page - 1) * maxLimit)
+    .limit(maxLimit)
+    .then(blogs => {
+      return res.status(200).json({ blogs })
+    })
+    .catch(err => {
+      return res.status(500).json({ error: err.message })
+    })
+})
+
+// search blog by category 
+app.post('/search-blogs-count', (req, res) => {
+  let { tag, author, query } = req.body;
+  let findQuery
+
+  if (tag) {
+    findQuery = { tags: tag, draft: false }
+  } else if (query) {
+    findQuery = { draft: false, title: new RegExp(query, 'i') }
+  }else if(author){
+    findQuery = {author, draft : false}
+  }
+
+  Blog.countDocuments(findQuery)
+    .then((count) => {
+      return res.status(200).json({ totalDocs: count })
+    })
+    .catch(err => {
+      return res.status(500).json({ error: err.message })
+    })
+})
+
+// route for searching users 
+app.post('/search-users', (req, res)=>{
+
+  let {query} = req.body;
+  User.find({"personal_info.username" : new RegExp(query, 'i')})
+  .limit(50)
+  .select("personal_info.fullname personal_info.username personal_info.profile_img -_id")
+  .then((users)=>{
+    return res.status(200).json({users})
+  })
+  .catch(err => {
+    return res.status(500).json({error : err.message})
+  })
+})
+
+// get user's profile data
+app.post('/get-profile', (req, res) =>{
+  let {username} = req.body;
+  User.findOne({"personal_info.username": username})
+  .select("-personal_info.password -google_auth -updatedAt -blogs")
+  .then((user) =>{
+    return res.status(200).json(user)
+  })
+  .catch(err =>{
+    return res.status(500).json({error : err.message})
+  })
+})
 // create-blog route 
 app.post("/create-blog", verifyJWT, (req, res) => {
 
   let authorId = req.user;
 
-  const { title, des, banner, tags, content, draft } = req.body;
+  let { title, des, banner, tags, content, draft } = req.body;
 
+  // console.log(req.body)
   if (!title.length) {
     return res.status(403).json({ error: "You must provide a title to publish the blog" })
   }
@@ -268,22 +397,23 @@ app.post("/create-blog", verifyJWT, (req, res) => {
     draft: Boolean(draft)
   })
 
-  blog.save()
-    .then((blog) => {
-      let incrementVal = draft ? 0 : 1;
-      User.findOneAndUpdate({ _id: authorId }, { $inc: { "account_info.total_posts": incrementVal }, $push: { "blogs": blog._id } })
-        .then(user => {
-          return res.status(200).json({ id: blog.blog_id })
-        })
-        .catch((err) => {
-          return res.status(500).json({ error: "failed to update total blog number" })
-        })
-    })
-    .catch((err) => {
-      return res.status(500).json({ error: err.message });
-    })
+  // console.log(blog)
+  blog.save().then((blog) => {
+    let incrementVal = draft ? 0 : 1;
+    User.findOneAndUpdate({ _id: authorId }, { $inc: { "account_info.total_posts": incrementVal }, $push: { "blogs": blog._id } })
+      .then(user => {
+        return res.status(200).json({ id: blog.blog_id })
+      })
+      .catch((err) => {
+        return res.status(500).json({ error: "failed to update total blog number" })
+      })
+  }).catch((err) => {
+    return res.status(500).json({ error: err.message });
+  })
 
 });
+
+
 
 app.listen(PORT, () => {
   console.log("server running at 3000 port");
