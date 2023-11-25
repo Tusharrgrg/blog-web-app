@@ -17,7 +17,7 @@ const PublishForm = () => {
     let {userAuth :{auth_token} } = useContext(UserContext);
     // Use context from editor-page 
     let {
-        blog: { banner, title, tags, des },
+        blog: { banner, title, tags, des, content},
         setEditorState,
         setBlog,
         blog,
@@ -82,21 +82,13 @@ const PublishForm = () => {
             return toast.error(`write description about your blog within ${characterLimit} characters to publish`)
         }
 
-        //   if (!banner.length) {
-        //     return toast.error()
-        //   }
-
-        //   if (!content.blocks.length) {
-        //     return toast.error()
-        //   }
-
         if (!tags.length) {
             return toast.error("Enter at least 1 tag to help us rank your blog")
         }
 
         let loading = toast.loading("Publishing...")
 
-        e.target.classList.add("disable")
+        e.target.classList.add('disable')
 
         let blogObj = {title, banner, des, tags, content, draft:false };
 

@@ -22,7 +22,7 @@ const UserNavigation = () => {
                     <p>Write</p>
                 </Link>
 
-                <Link to={`{/user/${username}`} className="link pl-8 py-4">
+                <Link to={`/user/${username}`} className="link pl-8 py-4">
                     Profile
                 </Link>
 

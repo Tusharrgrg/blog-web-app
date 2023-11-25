@@ -21,7 +21,7 @@ const Editor = () => {
 
     let { userAuth: { auth_token }, setUserAuth } = useContext(UserContext);
 
-    const [editorState, setEditorState] = useState("publish");
+    const [editorState, setEditorState] = useState("editor");
 
     const [textEditor, setTextEditor] = useState({isReady : false});
 
