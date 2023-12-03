@@ -273,20 +273,20 @@ app.get("/trending-blogs", (req, res) => {
 })
 
 app.post('/search-blogs', (req, res) => {
-  let { tag, query, author, page } = req.body;
+  let { tag, query, author, page , limit, eliminate_blog} = req.body;
 
   let findQuery
 
   if (tag) {
-    findQuery = { tags: tag, draft: false }
+    findQuery = { tags: tag, draft: false, blog_id:{$ne : eliminate_blog} }
   } else if (query) {
     findQuery = { draft: false, title: new RegExp(query, 'i') }
-  }else if(author){
-    findQuery = {author, draft : false}
+  } else if (author) {
+    findQuery = { author, draft: false }
   }
 
 
-  let maxLimit = 5;
+  let maxLimit = limit ? limit : 2;
   Blog.find(findQuery)
     .populate("author", "personal_info.profile_img personal_info.username personal_info.fullname -_id")
     .sort({ "publishedAt": -1 })
@@ -310,8 +310,8 @@ app.post('/search-blogs-count', (req, res) => {
     findQuery = { tags: tag, draft: false }
   } else if (query) {
     findQuery = { draft: false, title: new RegExp(query, 'i') }
-  }else if(author){
-    findQuery = {author, draft : false}
+  } else if (author) {
+    findQuery = { author, draft: false }
   }
 
   Blog.countDocuments(findQuery)
@@ -324,31 +324,31 @@ app.post('/search-blogs-count', (req, res) => {
 })
 
 // route for searching users 
-app.post('/search-users', (req, res)=>{
+app.post('/search-users', (req, res) => {
 
-  let {query} = req.body;
-  User.find({"personal_info.username" : new RegExp(query, 'i')})
-  .limit(50)
-  .select("personal_info.fullname personal_info.username personal_info.profile_img -_id")
-  .then((users)=>{
-    return res.status(200).json({users})
-  })
-  .catch(err => {
-    return res.status(500).json({error : err.message})
-  })
+  let { query } = req.body;
+  User.find({ "personal_info.username": new RegExp(query, 'i') })
+    .limit(50)
+    .select("personal_info.fullname personal_info.username personal_info.profile_img -_id")
+    .then((users) => {
+      return res.status(200).json({ users })
+    })
+    .catch(err => {
+      return res.status(500).json({ error: err.message })
+    })
 })
 
 // get user's profile data
-app.post('/get-profile', (req, res) =>{
-  let {username} = req.body;
-  User.findOne({"personal_info.username": username})
-  .select("-personal_info.password -google_auth -updatedAt -blogs")
-  .then((user) =>{
-    return res.status(200).json(user)
-  })
-  .catch(err =>{
-    return res.status(500).json({error : err.message})
-  })
+app.post('/get-profile', (req, res) => {
+  let { username } = req.body;
+  User.findOne({ "personal_info.username": username })
+    .select("-personal_info.password -google_auth -updatedAt -blogs")
+    .then((user) => {
+      return res.status(200).json(user)
+    })
+    .catch(err => {
+      return res.status(500).json({ error: err.message })
+    })
 })
 // create-blog route 
 app.post("/create-blog", verifyJWT, (req, res) => {
@@ -412,6 +412,27 @@ app.post("/create-blog", verifyJWT, (req, res) => {
   })
 
 });
+
+// get the blog details when a user click on particular blog
+app.post('/get-blog', (req, res) => {
+  let { blog_id } = req.body;
+  let incrementVal = 1
+
+  Blog.findOneAndUpdate({ blog_id: blog_id }, { $inc: { "activity.total_reads": incrementVal } })
+    .populate("author", "personal_info.fullname personal_info.username personal_info.profile_img")
+    .select("title des banner tags content activity publishedAt blog_id")
+    .then(blog => {
+      User.findOneAndUpdate({ "personal_info.username": blog.author.personal_info.username }, { $inc: { "account_info.total_reads": incrementVal } })
+        .catch(err => {
+          return res.status(500).json({ error: err.message })
+        })
+      return res.status(200).json({ blog })
+    })
+    .catch(err => {
+      return res.status(500).json({ error: err.message });
+    })
+
+})
 
 
 
