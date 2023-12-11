@@ -12,6 +12,8 @@ import aws from "aws-sdk";
 
 import User from "./Schema/User.js";
 import Blog from "./Schema/Blog.js";
+import Notification from './Schema/Notification.js';
+import Comment from './Schema/Comment.js'
 
 const app = express();
 let PORT = 3000;
@@ -88,6 +90,8 @@ const generateUserName = async (email) => {
   isUserNameExists ? (username += nanoid().substring(0, 5)) : "";
   return username;
 };
+
+
 
 // upload image url route
 app.get("/get-upload-url", (req, res) => {
@@ -273,12 +277,12 @@ app.get("/trending-blogs", (req, res) => {
 })
 
 app.post('/search-blogs', (req, res) => {
-  let { tag, query, author, page , limit, eliminate_blog} = req.body;
+  let { tag, query, author, page, limit, eliminate_blog } = req.body;
 
   let findQuery
 
   if (tag) {
-    findQuery = { tags: tag, draft: false, blog_id:{$ne : eliminate_blog} }
+    findQuery = { tags: tag, draft: false, blog_id: { $ne: eliminate_blog } }
   } else if (query) {
     findQuery = { draft: false, title: new RegExp(query, 'i') }
   } else if (author) {
@@ -350,12 +354,13 @@ app.post('/get-profile', (req, res) => {
       return res.status(500).json({ error: err.message })
     })
 })
+
 // create-blog route 
 app.post("/create-blog", verifyJWT, (req, res) => {
 
   let authorId = req.user;
 
-  let { title, des, banner, tags, content, draft } = req.body;
+  let { title, des, banner, tags, content, draft, id } = req.body;
 
   // console.log(req.body)
   if (!title.length) {
@@ -381,42 +386,46 @@ app.post("/create-blog", verifyJWT, (req, res) => {
     }
   }
 
-
   tags = tags.map(tag => tag.toLowerCase());
 
-  let blog_id = title.replace(/[^a-zA-Z0-9]/g, ' ').replace(/\s+/g, '-').trim() + nanoid();
+  let blog_id = id || title.replace(/[^a-zA-Z0-9]/g, ' ').replace(/\s+/g, '-').trim() + nanoid();
 
-  let blog = new Blog({
-    title,
-    des,
-    banner,
-    content,
-    tags,
-    author: authorId,
-    blog_id,
-    draft: Boolean(draft)
-  })
-
-  // console.log(blog)
-  blog.save().then((blog) => {
-    let incrementVal = draft ? 0 : 1;
-    User.findOneAndUpdate({ _id: authorId }, { $inc: { "account_info.total_posts": incrementVal }, $push: { "blogs": blog._id } })
-      .then(user => {
-        return res.status(200).json({ id: blog.blog_id })
+  if (id) {
+    Blog.findOneAndUpdate({ blog_id }, { title, des, banner, content, tags, draft: draft ? draft : false })
+      .then(() => {
+        return res.status(200).json({ id: blog_id })
       })
       .catch((err) => {
-        return res.status(500).json({ error: "failed to update total blog number" })
+        res.status(500).json({ error: err.message })
       })
-  }).catch((err) => {
-    return res.status(500).json({ error: err.message });
-  })
 
+  } else {
+    let blog = new Blog({
+      title, des, banner, content, tags, author: authorId, blog_id, draft: Boolean(draft)
+    })
+
+    // console.log(blog)
+    blog
+      .save()
+      .then((blog) => {
+        let incrementVal = draft ? 0 : 1;
+        User.findOneAndUpdate({ _id: authorId }, { $inc: { "account_info.total_posts": incrementVal }, $push: { "blogs": blog._id } })
+          .then(user => {
+            return res.status(200).json({ id: blog.blog_id })
+          })
+          .catch((err) => {
+            return res.status(500).json({ error: "failed to update total blog number" })
+          })
+      }).catch((err) => {
+        return res.status(500).json({ error: err.message });
+      })
+  }
 });
 
 // get the blog details when a user click on particular blog
 app.post('/get-blog', (req, res) => {
-  let { blog_id } = req.body;
-  let incrementVal = 1
+  let { blog_id, draft, mode } = req.body;
+  let incrementVal = mode !== 'edit' ? 1 : 0;
 
   Blog.findOneAndUpdate({ blog_id: blog_id }, { $inc: { "activity.total_reads": incrementVal } })
     .populate("author", "personal_info.fullname personal_info.username personal_info.profile_img")
@@ -426,7 +435,14 @@ app.post('/get-blog', (req, res) => {
         .catch(err => {
           return res.status(500).json({ error: err.message })
         })
-      return res.status(200).json({ blog })
+
+
+      if (blog.draft && !draft) {
+        return res.status(500).json({ error: 'you can not access draft blog' })
+      }
+
+      return res.status(200).json({ blog });
+
     })
     .catch(err => {
       return res.status(500).json({ error: err.message });
@@ -434,7 +450,205 @@ app.post('/get-blog', (req, res) => {
 
 })
 
+// 
+app.post('/like-blog', verifyJWT, (req, res) => {
 
+  let authorId = req.user;
+
+  let { _id, isLikedByUser } = req.body;
+
+  let incrementalVal = !isLikedByUser ? 1 : -1;
+
+  Blog.findOneAndUpdate({ _id }, { $inc: { "activity.total_likes": incrementalVal } })
+    .then((blog) => {
+      if (!isLikedByUser) {
+        let like = new Notification({
+          type: 'like',
+          blog: _id,
+          notification_for: blog.author,
+          user: authorId
+        })
+
+        like.save().then(notification => {
+          return res.status(200).json({ liked_by_user: true });
+        })
+      } else {
+        Notification.findOneAndDelete({ user: authorId, blog: _id, type: 'like' })
+          .then(data => {
+            return res.status(200).json({ liked_by_user: false });
+          })
+          .catch(err => {
+            return res.status(500).json({ error: err.message });
+          })
+      }
+    })
+
+})
+
+app.post('/isliked-by-user', verifyJWT, (req, res) => {
+
+  let user_id = req.user;
+  let { _id } = req.body;
+
+  Notification.exists({ user: user_id, type: 'like', blog: _id })
+    .then((result) => {
+      return res.status(200).json({ result });
+    })
+    .catch(err => {
+      return res.status(500).json({ error: err.message })
+    })
+})
+
+app.post('/add-comment', verifyJWT, (req, res) => {
+  let user_id = req.user;
+
+  let { _id, comment, replying_to, blog_author } = req.body;
+
+  if (!comment.length) {
+    return res.status(403).json({ error: "write something to post comment" })
+  }
+
+  // create comment doc
+  let commentObj = {
+    blog_id: _id, blog_author, comment, commented_by: user_id
+  }
+
+  // check if replying_to is undefined or not if it is undefined then we will create a parent comment else we will create a replying comment
+  if (replying_to) {
+    commentObj.parent = replying_to;
+    commentObj.isReply = true;
+  }
+
+  new Comment(commentObj).save().then(async (commentFile) => {
+    let { comment, commentedAt, children } = commentFile;
+    Blog.findOneAndUpdate({ _id }, { $push: { "comments": commentFile._id }, $inc: { "activity.total_comments": 1, "activity.total_parent_comments": replying_to ? 0 : 1 } })
+      .then(blog => {
+        console.log("New comment created");
+      })
+
+    let notificationObj = {
+      type: replying_to ? "reply" : "comment",
+      blog: _id,
+      notification_for: blog_author,
+      user: user_id,
+      comment: commentFile._id,
+    }
+
+    if(replying_to){
+      notificationObj.replied_on_comment = replying_to;
+      await Comment.findOneAndUpdate({_id:replying_to}, {$push :{children : commentFile._id} })
+      .then((replyingToComment)=>{
+        notificationObj.notification_for = replyingToComment.commented_by
+      })
+    }
+
+    new Notification(notificationObj).save().then(notification => console.log("new Notification Created"))
+
+    return res.status(200).json({ comment, commentedAt, _id: commentFile._id, children })
+  })
+})
+
+app.post('/get-blog-comments', (req, res) => {
+  let { blog_id, skip } = req.body;
+  let maxLimit = 5;
+
+  // console.log(req.body)
+  Comment.find({ blog_id, isReply: false })
+    .populate("commented_by", "personal_info.fullname personal_info.username personal_info.profile_img")
+    .skip(skip)
+    .limit(maxLimit)
+    .sort({
+      'commentedAt': -1
+    })
+    .then(comment => {
+      res.status(200).json(comment);
+    })
+    .catch(err => {
+      console.log(err);
+      res.status(500).json({ error: err.message })
+    })
+})
+
+app.post('/get-replies', (req, res)=>{
+
+  let {_id, skip} = req.body;
+
+  let maxLimit = 5;
+
+  Comment.findOne({_id}).populate({
+    path :"children",
+    option :{
+      limit : maxLimit,
+      skip : skip,
+      sort: {'commentedAt' : -1}
+    },
+    populate : {
+      path :'commented_by',
+      select : 'personal_info.profile_img personal_info.username personal_info.fullname'
+    },
+    select : '-blog_id -updatedAt'
+  })
+  .select("children")
+  .then(doc =>{
+    return res.status(200).json({replies : doc.children})
+  })
+  .catch(err=>{
+    return res.status(500).json({error : err.message})
+  })
+})
+
+// function to delelte comments
+const deleteComments = (_id) =>{
+
+  Comment.findOneAndDelete({_id}).then(comment => {
+    if(comment.parent){
+      Comment.findOneAndUpdate({_id : comment.parent}, {$pull : {children : _id}})
+      .then(data => console.log('Comment deleted from parent'))
+      .catch(err => console.log(err))
+    }
+
+    Notification.findOneAndDelete({comment : _id}).then(notification =>{
+      console.log('comment notification deleted');
+    })
+    Notification.findOneAndDelete({reply : _id}).then(notification =>{
+      console.log('reply notification deleted');
+    })
+
+    Blog.findOneAndUpdate({_id : comment.blog_id}, {$pull : {comments : _id}, $inc :{'activity.total_comments' : -1}, 'activity.total_parent_comments':comment.parent ? 0 : -1})
+    .then(blog =>{
+      if(comment.children.length){
+        comment.children.map(replies=>{
+          deleteComments(replies)
+        })
+      }
+    })
+
+  })
+  .catch(err =>{
+    console.log(err.message);
+  })
+}
+
+
+app.post('/delete-comment', verifyJWT, (req, res)=>{
+
+  let user_id = req.user;
+
+  let {_id} = req.body;
+
+  Comment.findOne({_id}).then(comment =>{
+
+    if(user_id == comment.commented_by || user_id == comment.blog_author){
+      deleteComments(_id);
+
+      return res.status(200).json({status :'done'})
+
+    }else{
+      return res.status(403).json({error : "you can not delete this comment"})
+    }
+  })
+
+})
 
 app.listen(PORT, () => {
   console.log("server running at 3000 port");
